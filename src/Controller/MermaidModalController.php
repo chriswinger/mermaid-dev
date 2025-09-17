@@ -14,14 +14,20 @@ class MermaidModalController extends ControllerBase {
   public function view($entity_type, $entity_id, $field_name, $delta) {
     $entity = $this->etm->getStorage($entity_type)->load($entity_id);
     $item = $entity->get($field_name)->get($delta);
+
+    // Read ?pz=1 to enable pan-zoom inside the modal too.
+    $pz = (bool) \Drupal::requestStack()->getCurrentRequest()->query->get('pz');
+
     $build = [
       '#theme' => 'mermaid_diagram',
       '#mermaid' => $item->diagram,
       '#title' => $item->title,
       '#caption' => $item->caption,
       '#attached' => [
-        // Ensure whatever library renders Mermaid is available in the modal.
-        'library' => ['mermaid_diagram_field/mermaid'],
+        'library' => array_merge(
+          ['mermaid_diagram_field/diagram'],
+          $pz ? ['mermaid_diagram_field/pan_zoom'] : []
+        ),
       ],
     ];
     return $build;
