@@ -8,8 +8,6 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
 
 /**
- * Plugin implementation of the Mermaid Diagram formatter.
- *
  * @FieldFormatter(
  *   id = "mermaid_diagram_formatter",
  *   label = @Translation("Mermaid diagram"),
@@ -20,13 +18,20 @@ use Drupal\Core\Url;
  */
 class MermaidDiagramFormatter extends FormatterBase {
 
+  /**
+   * {@inheritdoc}
+   */
   public static function defaultSettings() {
     return [
       'enable_pan_zoom' => FALSE,
       'display_in_modal' => FALSE,
+      'modal_link_text' => 'View diagram',
     ] + parent::defaultSettings();
   }
 
+  /**
+   * {@inheritdoc}
+   */
   public function settingsForm(array $form, FormStateInterface $form_state) {
     $elements = [];
 
@@ -34,23 +39,42 @@ class MermaidDiagramFormatter extends FormatterBase {
       '#type' => 'checkbox',
       '#title' => $this->t('Display in modal'),
       '#default_value' => $this->getSetting('display_in_modal'),
-      '#description' => $this->t('Show a link that opens the diagram in a modal dialog.'),
+    ];
+
+    $elements['modal_link_text'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Modal link text'),
+      '#default_value' => $this->getSetting('modal_link_text'),
+      '#maxlength' => 255,
+      '#placeholder' => $this->t('View diagram'),
+      '#description' => $this->t('Text for the modal open link. You can include @title as a placeholder for the item title.'),
+      // Only show this when "Display in modal" is checked.
+      '#states' => [
+        'visible' => [
+          ':input[name="fields[' . $this->fieldDefinition->getName() . '][settings_edit_form][settings][display_in_modal]"]' => ['checked' => TRUE],
+        ],
+      ],
     ];
 
     $elements['enable_pan_zoom'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable pan & zoom'),
       '#default_value' => $this->getSetting('enable_pan_zoom'),
-      '#description' => $this->t('Attach svg-pan-zoom to the diagram (inline or in modal).'),
     ];
 
     return $elements + parent::settingsForm($form, $form_state);
   }
 
+  /**
+   * {@inheritdoc}
+   */
   public function settingsSummary() {
     $summary = parent::settingsSummary();
     $summary[] = $this->t('Display: @mode', [
       '@mode' => $this->getSetting('display_in_modal') ? $this->t('Modal') : $this->t('Inline'),
+    ]);
+    $summary[] = $this->t('Modal link text: @text', [
+      '@text' => $this->getSetting('modal_link_text') ?: $this->t('View diagram'),
     ]);
     $summary[] = $this->t('Pan & zoom: @state', [
       '@state' => $this->getSetting('enable_pan_zoom') ? $this->t('On') : $this->t('Off'),
@@ -58,10 +82,14 @@ class MermaidDiagramFormatter extends FormatterBase {
     return $summary;
   }
 
+  /**
+   * {@inheritdoc}
+   */
   public function viewElements(FieldItemListInterface $items, $langcode) {
     $elements = [];
-    $enable_pan = (bool) ($this->getSetting('enable_pan_zoom') ?? FALSE);
-    $as_modal  = (bool) ($this->getSetting('display_in_modal') ?? FALSE);
+    $enable_pan = (bool) $this->getSetting('enable_pan_zoom');
+    $as_modal   = (bool) $this->getSetting('display_in_modal');
+    $label_tpl  = (string) $this->getSetting('modal_link_text');
 
     // Base libraries for inline render.
     $base_libs = ['mermaid_diagram_field/diagram'];
@@ -71,7 +99,11 @@ class MermaidDiagramFormatter extends FormatterBase {
 
     foreach ($items as $delta => $item) {
       if ($as_modal) {
-        // Build a modal link. Pass ?pz=1 so the controller can load pan-zoom too.
+        // Build link label: allow @title placeholder; otherwise fallback chain.
+        $link_title = trim($label_tpl) !== ''
+          ? str_replace('@title', (string) ($item->title ?? ''), $label_tpl)
+          : ((string) ($item->title ?? '') ?: (string) $this->t('View diagram'));
+
         $url = Url::fromRoute('mermaid_diagram_field.modal', [
           'entity_type' => $items->getEntity()->getEntityTypeId(),
           'entity_id'   => $items->getEntity()->id(),
@@ -83,29 +115,25 @@ class MermaidDiagramFormatter extends FormatterBase {
 
         $elements[$delta] = [
           '#type' => 'link',
-          '#title' => $item->title ?: $this->t('View diagram'),
+          '#title' => $link_title,
           '#url' => $url,
           '#attributes' => [
-            'class' => ['use-ajax', 'button', 'mermaid-diagram-open'],
-            // Optional: data-dialog options
+            'class' => ['use-ajax', 'mermaid-diagram-open'],
             'data-dialog-type' => 'modal',
             'data-dialog-options' => json_encode(['width' => '90%']),
           ],
           '#attached' => [
-            'library' => [
-              'core/drupal.dialog.ajax',
-            ],
+            'library' => ['core/drupal.dialog.ajax'],
           ],
         ];
       }
       else {
-        // Inline render (what you already had), with libs toggled by the setting.
         $elements[$delta] = [
-          '#theme'   => 'mermaid_diagram',
+          '#theme' => 'mermaid_diagram',
           '#mermaid' => $item->diagram,
-          '#title'   => $item->title,
+          '#title' => $item->title,
           '#caption' => $item->caption,
-          '#key'     => $item->key,
+          '#key' => $item->key,
           '#show_code' => $item->show_code,
           '#attached' => [
             'library' => $base_libs,
@@ -116,4 +144,5 @@ class MermaidDiagramFormatter extends FormatterBase {
 
     return $elements;
   }
+
 }
